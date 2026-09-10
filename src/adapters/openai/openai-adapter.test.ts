@@ -112,6 +112,53 @@ describe('OpenAIAdapter', () => {
 			}
 		});
 
+		it.each([
+			['resp_0123456789abcdef', 'resp_0123456789abcdef'],
+			['stream_1789049863464_lj2l1fh', undefined],
+			['error_1789049863464', undefined],
+			['', undefined]
+		])(
+			'chains previous_response_id only for real OpenAI ids (parent %p)',
+			async (parentMessageId, expected) => {
+				const fixture = loadFixture('text-generation');
+				let sent: Record<string, unknown> = {};
+
+				nock(OPENAI_BASE)
+					.post('/v1/responses', (body) => {
+						sent = body as Record<string, unknown>;
+						return true;
+					})
+					.reply(fixture.response.status, fixture.response.body);
+
+				const adapter = new OpenAIAdapter({
+					apiKey: mockApiKey,
+					defaultModel: 'gpt-4.1-nano'
+				});
+
+				const context: IAIRequestContext = {
+					mode: 'incremental',
+					parentMessageId,
+					messages: [
+						{
+							id: 'msg-2',
+							role: 'user',
+							content: 'And again?',
+							timestamp: Date.now()
+						}
+					],
+					tools: []
+				};
+
+				const result = await adapter.handleRequest(
+					context,
+					new AbortController().signal
+				);
+
+				expect(result.mode).toBe('final');
+				expect(sent.previous_response_id).toBe(expected);
+			}
+		);
+
 		it('should handle tool calls in response', async () => {
 			const fixture = loadFixture('text-with-tools');
 

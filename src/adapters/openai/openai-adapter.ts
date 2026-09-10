@@ -17,6 +17,31 @@ import { runOpenAITranscriptionSession } from './realtime-transcription';
 /**
  * OpenAI adapter using Vercel AI SDK
  */
+/**
+ * Only a real OpenAI Responses id (`resp_…`) may be chained through
+ * `previous_response_id`. Clients keep the assistant message id from the
+ * `created` event (`stream_…`) when a stream is aborted or cut (network,
+ * proxy timeout, deploy), and would then poison every following turn with
+ * "Invalid 'previous_response_id'". Dropping the bogus id costs the model the
+ * context of that one turn; the next `completed` event repairs the chain.
+ */
+export function resolvePreviousResponseId(
+	parentMessageId: string | undefined
+): string | undefined {
+	if (parentMessageId === undefined || parentMessageId === '') {
+		return undefined;
+	}
+
+	if (parentMessageId.startsWith('resp_')) {
+		return parentMessageId;
+	}
+
+	logger.warn('Ignoring parentMessageId that is not an OpenAI response id', {
+		parentMessageId
+	});
+	return undefined;
+}
+
 export class OpenAIAdapter extends BaseAdapter {
 	private provider: ReturnType<typeof createOpenAI>;
 	private customFetch?: typeof fetch;
@@ -56,7 +81,9 @@ export class OpenAIAdapter extends BaseAdapter {
 		return {
 			openai: {
 				instructions: context.instructions,
-				previousResponseId: context.parentMessageId
+				previousResponseId: resolvePreviousResponseId(
+					context.parentMessageId
+				)
 			}
 		};
 	}
